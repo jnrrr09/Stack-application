@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Undo/Redo Editor</title>
+<style>
+:root{--bg:#eef1f6;--ink:#1b2430;--mute:#5f6b7a;--line:#cdd5e0;--card:#fbfcfe;--acc:#5b3fd1;--accl:#e9e4fb;--warn:#b3402a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161d;--ink:#e8edf5;--mute:#98a4b5;--line:#2b3441;--card:#1a2029;--acc:#a592ff;--accl:#2a2447;--warn:#ff8a70}}
+:root[data-theme="dark"]{--bg:#12161d;--ink:#e8edf5;--mute:#98a4b5;--line:#2b3441;--card:#1a2029;--acc:#a592ff;--accl:#2a2447;--warn:#ff8a70}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:28px 18px 60px}
+h1{font:800 clamp(2rem,6vw,3.1rem)/1.05 "Avenir Next Condensed","Arial Narrow",system-ui,sans-serif;letter-spacing:-.02em;margin:0 0 10px}
+h2{font-size:1.15rem;margin:34px 0 10px}
+p{max-width:68ch;margin:0 0 12px}.mute{color:var(--mute)}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:560px;font-size:.93rem}
+td,th{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input{font:inherit;padding:8px 10px;border:1px solid var(--ink);border-radius:5px;background:var(--bg);color:var(--ink);flex:1;min-width:160px}
+button{font:inherit;font-size:.92rem;padding:8px 14px;border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:5px;cursor:pointer}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+:root[data-theme="dark"] button.p{color:#12161d}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) button.p{color:#12161d}}
+button:hover:not(:disabled){box-shadow:0 0 0 2px var(--line)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.doc{min-height:150px;font:15px/1.7 ui-monospace,Menlo,Consolas,monospace;margin-top:12px;border:1px dashed var(--line);border-radius:6px;padding:10px 12px;background:var(--bg)}
+.doc div{display:flex;gap:12px}.doc i{color:var(--mute);font-style:normal;min-width:1.5em;text-align:right;user-select:none}
+.empty{color:var(--mute)}
+.stacks{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:560px){.stacks{grid-template-columns:1fr}}
+.stk h3{margin:0 0 8px;font-size:.85rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mute)}
+.col{display:flex;flex-direction:column;gap:5px;min-height:90px;border-bottom:4px solid var(--ink);padding-bottom:6px;justify-content:flex-start}
+.blk{background:var(--accl);border:1px solid var(--acc);border-radius:5px;padding:6px 10px;font-size:.88rem;position:relative;overflow-wrap:anywhere}
+.blk.top{border-width:2px;font-weight:600}
+.blk .t{position:absolute;right:8px;top:6px;font-size:.65rem;letter-spacing:.08em;color:var(--acc);font-weight:700}
+pre{background:#10131a;color:#d9ddf5;padding:12px;border-radius:6px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;overflow-x:auto;min-height:7em;margin:0;white-space:pre}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em}
+.msg{color:var(--warn);min-height:1.4em;font-size:.9rem;margin:8px 0 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Undo/Redo Editor</h1>
+<p>A stack is a pile: the last item placed on top is the first one taken off. Below are the real-world places that depend on that rule, why a stack is the right structure, and a working editor whose undo and redo run on two stacks.</p>
+
+<h2>Where stacks are required</h2>
+<div class="tw"><table>
+<tr><th>Application</th><th>What is stacked</th><th>Why a stack</th></tr>
+<tr><td>Undo and redo in editors</td><td>Previous document states</td><td>The most recent change must be reversed first.</td></tr>
+<tr><td>Browser back button</td><td>Pages visited</td><td>Back returns to the page you left most recently.</td></tr>
+<tr><td>Function calls (call stack)</td><td>Active function frames</td><td>The function called last must finish first, which is what makes recursion work.</td></tr>
+<tr><td>Compilers and bracket matching</td><td>Opening brackets, parsing state</td><td>The most recent unclosed bracket is the next one that must close.</td></tr>
+<tr><td>Expression evaluation</td><td>Operands and operators</td><td>Postfix calculators and operator precedence resolve the newest values first.</td></tr>
+<tr><td>Backtracking and DFS</td><td>Path taken so far</td><td>On a dead end, step back to the latest choice point.</td></tr>
+<tr><td>Single-lane parking garage</td><td>Cars in a dead-end lane</td><td>Only the last car in can leave first.</td></tr>
+</table></div>
+
+<h2>Why stacks are necessary</h2>
+<p><b>The newest thing matters first.</b> Many problems nest: finish the innermost task before the outer one, or reverse the latest step before earlier ones. <b>Reversal for free.</b> Pushing items and popping them returns them in reverse order. <b>Speed.</b> <code>push</code>, <code>pop</code> and <code>peek</code> all take constant time because only the top is touched. <b>Safety by restriction.</b> Access is allowed at one end only, so the structure cannot be used out of order. A queue would give back the oldest step, which is the wrong one to undo.</p>
+
+<h2>The build: undo/redo with two stacks</h2>
+<p class="mute">Every edit pushes the previous document onto the <b>undo stack</b>. Undo pops it and pushes the current state onto the <b>redo stack</b>. A new edit empties the redo stack, as in real editors.</p>
+
+<div class="panel">
+  <div class="row">
+    <input id="txt" placeholder="Type a line of text" maxlength="60" aria-label="Line of text">
+    <button class="p" id="add">Add line</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="del">Delete last line</button><button id="up">UPPERCASE</button><button id="clr">Clear all</button>
+    <span style="flex:1"></span>
+    <button class="p" id="undo">Undo</button><button class="p" id="redo">Redo</button>
+  </div>
+  <div class="msg" id="msg" role="status"></div>
+  <div class="doc" id="doc" aria-label="Document"></div>
+</div>
+
+<div class="stacks">
+  <div class="panel stk"><h3>Undo stack (<span id="nu">0</span>)</h3><div class="col" id="cu"></div></div>
+  <div class="panel stk"><h3>Redo stack (<span id="nr">0</span>)</h3><div class="col" id="cr"></div></div>
+</div>
+<pre id="log" aria-live="polite">// Operations appear here</pre>
+</main>
+<script>
+class Stack{
+  constructor(){this.items=[];}
+  push(x){this.items.push(x);}
+  pop(){return this.items.pop();}
+  peek(){return this.items[this.items.length-1];}
+  size(){return this.items.length;}
+  isEmpty(){return this.items.length===0;}
+  toArray(){return this.items.slice();}
+}
+class Editor{
+  constructor(){this.doc=[];this.undo=new Stack();this.redo=new Stack();}
+  apply(label,fn){
+    this.undo.push({label,before:this.doc.slice()});
+    this.redo=new Stack();
+    this.doc=fn(this.doc.slice());
+  }
+  undoOp(){
+    if(this.undo.isEmpty())return false;
+    const e=this.undo.pop();
+    this.redo.push({label:e.label,after:this.doc.slice()});
+    this.doc=e.before;return e.label;
+  }
+  redoOp(){
+    if(this.redo.isEmpty())return false;
+    const r=this.redo.pop();
+    this.undo.push({label:r.label,before:this.doc.slice()});
+    this.doc=r.after;return r.label;
+  }
+}
+// ---- UI ----
+const ed=new Editor(),$=id=>document.getElementById(id);let logLines=[];
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+const log=s=>{logLines.push(s);if(logLines.length>8)logLines.shift();$("log").textContent=logLines.join("\n");};
+const say=t=>$("msg").textContent=t;
+function act(label,fn,note){ed.apply(label,fn);log("push -> undo   "+label+"   (undo "+ed.undo.size()+", redo 0)");say("");render();}
+function drawStack(id,stack){
+  const c=$(id);c.replaceChildren();const a=stack.toArray().reverse();
+  if(!a.length)c.appendChild(el("div","empty","empty"));
+  a.forEach((it,i)=>{const b=el("div","blk"+(i===0?" top":""),it.label);if(i===0)b.appendChild(el("span","t","TOP"));c.appendChild(b);});
+}
+function render(){
+  const d=$("doc");d.replaceChildren();
+  if(!ed.doc.length)d.appendChild(el("div","empty","(empty document)"));
+  ed.doc.forEach((l,i)=>{const r=el("div");r.append(el("i",null,i+1),el("span",null,l));d.appendChild(r);});
+  drawStack("cu",ed.undo);drawStack("cr",ed.redo);
+  $("nu").textContent=ed.undo.size();$("nr").textContent=ed.redo.size();
+  $("undo").disabled=ed.undo.isEmpty();$("redo").disabled=ed.redo.isEmpty();
+}
+function add(){const t=$("txt").value.trim();if(!t){say("Type something first.");return;}
+  act('Add "'+(t.length>18?t.slice(0,18)+"…":t)+'"',d=>[...d,t]);$("txt").value="";$("txt").focus();}
+function doUndo(){const l=ed.undoOp();if(l===false){say("Nothing to undo: the undo stack is empty.");return;}log("pop  <- undo   "+l+"   (undo "+ed.undo.size()+", redo "+ed.redo.size()+")");say("");render();}
+function doRedo(){const l=ed.redoOp();if(l===false){say("Nothing to redo: the redo stack is empty.");return;}log("pop  <- redo   "+l+"   (undo "+ed.undo.size()+", redo "+ed.redo.size()+")");say("");render();}
+$("add").onclick=add;$("txt").onkeydown=e=>{if(e.key==="Enter")add();};
+$("del").onclick=()=>ed.doc.length?act("Delete last line",d=>d.slice(0,-1)):say("The document is empty.");
+$("up").onclick=()=>ed.doc.length?act("UPPERCASE",d=>d.map(x=>x.toUpperCase())):say("The document is empty.");
+$("clr").onclick=()=>ed.doc.length?act("Clear all",()=>[]):say("The document is empty.");
+$("undo").onclick=doUndo;$("redo").onclick=doRedo;
+document.addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT")return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?doRedo():doUndo();}
+  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="y"){e.preventDefault();doRedo();}
+});
+render();
+</script>
+</body>
+</html>
