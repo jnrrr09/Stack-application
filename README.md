@@ -1,0 +1,1 @@
+An efficient, custom-built Stack data structure optimized for seamless state management. It features native Undo and Redo capabilities, making it ideal for tracking sequential actions, reversing user states, and effortlessly re-applying changes in interactive applications.
